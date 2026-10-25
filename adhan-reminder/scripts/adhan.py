@@ -125,35 +125,91 @@ def today_times(cfg, now_utc=None):
 
 # ---------- messages ----------
 
-def adhan_message(prayer, lang="ar"):
+ADHAN_LINES = {
+    "ar": [
+        "استعدّ، دقائق من الراحة والسكينة تنتظرك 🤍",
+        "حان وقت لقاء ربك، الله يتقبل منك 🌿",
+        "وقفة سكينة في وسط الشغل، الله يبارك لك فيه 🕊️",
+        "أبشر بالخير، الصلاة راحة للقلب ✨",
+        "الله يعينك ويقوّيك على طاعته 🤲",
+        "يا بطل، هذي استراحة الروح، لا تفوّتها 💛",
+    ],
+    "en": [
+        "Get ready: a few calm minutes are waiting for you 🤍",
+        "It is time to meet your Lord. May Allah accept it from you 🌿",
+        "A moment of peace in the middle of work. May Allah bless your time 🕊️",
+        "Good news ahead: prayer is rest for the heart ✨",
+        "May Allah help you and strengthen you in His obedience 🤲",
+        "You've got this. This is the break your soul needs 💛",
+    ],
+}
+
+PRAY_LINES = {
+    "ar": [
+        "راحة قلبك في سجدة، والتوفيق من الله 🤍",
+        "دقائق قليلة بينك وبين ربك تنوّر لك يومك 🌿",
+        "الله يبارك في وقتك وشغلك 🤲",
+        "الصلاة نور، والشغل بعدها أخف بإذن الله ✨",
+        "أنت أقوى بصلاتك، قوم وارجع أنشط 💪",
+        "قدّم صلاتك، والبركة في وقتك بإذن الله 🌸",
+        "استرح مع ربك، وارجع بهمّة جديدة ⭐",
+        "ربنا يتقبل منك ويكتب لك الأجر 🤍",
+        "قوم يا بطل، الصلاة تنتظرك 💛",
+        "الله يعينك، خطوة صغيرة وتكسب راحة البال 🕊️",
+    ],
+    "en": [
+        "The peace of your heart is in one prostration 🤍",
+        "A few minutes with your Lord brighten the rest of your day 🌿",
+        "May Allah bless your time and your work 🤲",
+        "Prayer is light, and work feels lighter after it ✨",
+        "You are stronger after prayer. Go, then come back refreshed 💪",
+        "Put prayer first, and the barakah follows in sha Allah 🌸",
+        "Rest with your Lord and return with new energy ⭐",
+        "May Allah accept it from you and reward you 🤍",
+        "You've got this, go pray 💛",
+        "May Allah help you. One small step and you win peace of mind 🕊️",
+    ],
+}
+
+
+def _pick(pool, lang, seed):
+    lines = pool[lang]
+    return lines[seed % len(lines)]
+
+
+def adhan_message(prayer, lang="ar", seed=0):
     if lang == "en":
         return (
             "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
             "   ﷽   ✦ It is time for the %s adhan ✦\n"
             "   “Come to prayer, come to success”\n"
-            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % EN[prayer]
+            "   %s\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (EN[prayer], _pick(ADHAN_LINES, lang, seed))
         )
     return (
         "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
         "   ﷽   ✦ حان الآن موعد أذان %s ✦\n"
         "   «حيّ على الصلاة، حيّ على الفلاح»\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % AR[prayer]
+        "   %s\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (AR[prayer], _pick(ADHAN_LINES, lang, seed))
     )
 
 
-def pray_message(prayer, lang="ar"):
+def pray_message(prayer, lang="ar", seed=0):
     if lang == "en":
         return (
             "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
-            "   🕌 Time to pray %s ✦\n"
-            "   %d minutes have passed since the adhan. Work can wait, prayer comes first 🤍\n"
-            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (EN[prayer], GAP_MIN)
+            "   🕌 Get up and pray %s ✦\n"
+            "   %d minutes have passed since the adhan\n"
+            "   %s\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (EN[prayer], GAP_MIN, _pick(PRAY_LINES, lang, seed))
         )
     return (
         "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
-        "   🕌 قم صلِّ %s يا غالي ✦\n"
-        "   مضى %d دقائق على الأذان — الشغل ما يطير، والصلاة أولى 🤍\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (AR[prayer], GAP_MIN)
+        "   🕌 قوم صلِّ %s ✦\n"
+        "   مضى %d دقائق على الأذان\n"
+        "   %s\n"
+        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (AR[prayer], GAP_MIN, _pick(PRAY_LINES, lang, seed))
     )
 
 
@@ -166,6 +222,7 @@ def due_messages(cfg, channel):
     now = datetime.now(tz)
     state = load(STATE, {})
     today = now.strftime("%Y-%m-%d")
+    seed = now.toordinal() * len(PRAYERS)  # different line each prayer and each day
     # drop old days
     state = {k: v for k, v in state.items() if k.startswith(today)}
     out = []
@@ -177,11 +234,11 @@ def due_messages(cfg, channel):
         if gap <= now < gap + timedelta(minutes=LATE_WINDOW_MIN):
             if k_pray not in state:
                 state[k_adhan] = state[k_pray] = True
-                out.append(pray_message(p, lang_of(cfg)))
+                out.append(pray_message(p, lang_of(cfg), seed + PRAYERS.index(p)))
         elif t <= now < gap:
             if k_adhan not in state:
                 state[k_adhan] = True
-                out.append(adhan_message(p, lang_of(cfg)))
+                out.append(adhan_message(p, lang_of(cfg), seed + PRAYERS.index(p)))
     save(STATE, state)
     return out
 
