@@ -1,15 +1,17 @@
 ---
 name: prayer-times
-description: عرض مواقيت الصلاة اليوم أو تغيير المدينة أو تشغيل/إيقاف إشعارات سطح المكتب. استخدمه عندما يقول المستخدم "مواقيت الصلاة"، "غيّر مدينتي"، "أنا في جدة/دبي/..."، "وقف تذكير الصلاة".
+description: Show today's prayer times, change the user's city, switch reminder language (Arabic/English), or turn desktop notifications on/off. عرض مواقيت الصلاة أو تغيير المدينة أو لغة التذكير أو تشغيل/إيقاف الإشعارات. Use when the user says "prayer times", "مواقيت الصلاة", "change my city", "غيّر مدينتي", "أنا في جدة/دبي/...", "reminders in English", "خلّ التذكير بالإنجليزي", "stop prayer reminders", "وقف تذكير الصلاة".
 ---
 
-السكربت: `${CLAUDE_PLUGIN_ROOT}/scripts/adhan.py`
+Launcher: `${CLAUDE_PLUGIN_ROOT}/scripts/run.sh` (finds Python 3.9+ and runs `adhan.py`).
+Reply to the user in the language they are writing in.
 
-- **عرض المواقيت**: `sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" times`
-- **تغيير المدينة**: إذا لم يذكرها المستخدم اسأله عن المدينة والدولة. حوّلها للإنجليزي ثم:
+- **Show times / عرض المواقيت**: `sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" times`
+- **Change city / تغيير المدينة**: if the user did not name it, ask for the city and country. Convert both to English, then:
   `sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" set-city "Jeddah" "Saudi Arabia"`
-  (المواقيت تُجلب من Aladhan API؛ السعودية تستخدم تقويم أم القرى تلقائيًا، وبقية الدول طريقتها المناسبة. يمكن تمرير رقم الطريقة كوسيط ثالث.)
-  إذا فشل الجلب، اطلب تهجئة أخرى للمدينة.
-- **إشعارات سطح المكتب (macOS / Windows / Linux)** (تعمل حتى لو كلود مشغول بأمر طويل): `... notify on` أو `... notify off`، وإيقاف العملية الخلفية: `... stop`
+  (Times come from the Aladhan API. Saudi Arabia uses the Umm Al-Qura calendar automatically; other countries get a suitable method. A method number can be passed as a third argument.)
+  If fetching fails, ask for another spelling of the city.
+- **Reminder language / لغة التذكير**: `... set-lang ar` (Arabic, default) or `... set-lang en` (English). The setting is kept when the city changes.
+- **Desktop notifications (macOS / Windows / Linux)**, which work even while Claude is busy with a long command: `... notify on` or `... notify off`. Stop the background process with `... stop`.
 
-بعد أي تغيير اعرض المواقيت للمستخدم بشكل مرتب.
+After any change, show the user the times in a tidy list.

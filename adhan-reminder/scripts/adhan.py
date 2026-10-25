@@ -5,6 +5,7 @@ Usage:
   adhan.py hook            # called by Claude Code hooks (event JSON on stdin)
   adhan.py watch           # background loop: desktop notification at adhan / +10 min
   adhan.py set-city CITY [COUNTRY] [METHOD]
+  adhan.py set-lang ar|en  # language of the reminder messages (default: ar)
   adhan.py times           # print today's times
   adhan.py status          # print config state (JSON)
   adhan.py notify on|off   # toggle desktop notifications (macOS / Windows / Linux)
@@ -33,6 +34,8 @@ PIDFILE = os.path.join(HOME, "watcher.pid")
 
 PRAYERS = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]
 AR = {"Fajr": "الفجر", "Dhuhr": "الظهر", "Asr": "العصر", "Maghrib": "المغرب", "Isha": "العشاء"}
+EN = {"Fajr": "Fajr", "Dhuhr": "Dhuhr", "Asr": "Asr", "Maghrib": "Maghrib", "Isha": "Isha"}
+LANGS = ("ar", "en")
 GAP_MIN = 10          # minutes between the adhan message and the "go pray" message
 LATE_WINDOW_MIN = 25  # how long after the +10 mark the "go pray" message may still show
 WATCH_MAX_HOURS = 12
@@ -72,6 +75,11 @@ def get_tz(name):
         return ZoneInfo(name)
     except Exception:
         return datetime.now().astimezone().tzinfo
+
+
+def lang_of(cfg):
+    lang = (cfg or {}).get("lang", "ar")
+    return lang if lang in LANGS else "ar"
 
 
 def default_method(country):
@@ -117,23 +125,35 @@ def today_times(cfg, now_utc=None):
 
 # ---------- messages ----------
 
-def adhan_message(prayer):
-    name = AR[prayer]
+def adhan_message(prayer, lang="ar"):
+    if lang == "en":
+        return (
+            "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "   ﷽   ✦ It is time for the %s adhan ✦\n"
+            "   “Come to prayer, come to success”\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % EN[prayer]
+        )
     return (
         "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
         "   ﷽   ✦ حان الآن موعد أذان %s ✦\n"
         "   «حيّ على الصلاة، حيّ على الفلاح»\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % name
+        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % AR[prayer]
     )
 
 
-def pray_message(prayer):
-    name = AR[prayer]
+def pray_message(prayer, lang="ar"):
+    if lang == "en":
+        return (
+            "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
+            "   🕌 Time to pray %s ✦\n"
+            "   %d minutes have passed since the adhan. Work can wait, prayer comes first 🤍\n"
+            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (EN[prayer], GAP_MIN)
+        )
     return (
         "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
         "   🕌 قم صلِّ %s يا غالي ✦\n"
         "   مضى %d دقائق على الأذان — الشغل ما يطير، والصلاة أولى 🤍\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (name, GAP_MIN)
+        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" % (AR[prayer], GAP_MIN)
     )
 
 
@@ -157,16 +177,26 @@ def due_messages(cfg, channel):
         if gap <= now < gap + timedelta(minutes=LATE_WINDOW_MIN):
             if k_pray not in state:
                 state[k_adhan] = state[k_pray] = True
-                out.append(pray_message(p))
+                out.append(pray_message(p, lang_of(cfg)))
         elif t <= now < gap:
             if k_adhan not in state:
                 state[k_adhan] = True
-                out.append(adhan_message(p))
+                out.append(adhan_message(p, lang_of(cfg)))
     save(STATE, state)
     return out
 
 
 # ---------- hook entrypoint ----------
+
+REMIND_START = {
+    "ar": "[adhan-reminder] ذكّر المستخدم بالصلاة بإيجاز في ردك القادم.",
+    "en": "[adhan-reminder] Briefly remind the user to pray in your next reply (in English).",
+}
+REMIND_MID = {
+    "ar": "[adhan-reminder] وصلت للمستخدم رسالة موعد صلاة. أشر لها بإيجاز في ردك القادم.",
+    "en": "[adhan-reminder] A prayer-time message was just shown to the user. Briefly acknowledge it in your next reply (in English).",
+}
+
 
 def cmd_hook():
     try:
@@ -176,13 +206,16 @@ def cmd_hook():
     cfg = load(CONFIG, None)
     result = {}
 
-    if not cfg:
+    if not cfg or not cfg.get("city"):
         if event == "SessionStart":
+            run = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.sh")
             result = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
-                "[adhan-reminder] لم يحدد المستخدم مدينته بعد. اسأله في أول رد: «في أي مدينة أنت؟ "
-                "(الرياض افتراضيًا)» ثم شغّل: sh \"" + os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.sh") + "\" "
-                "set-city \"<المدينة بالإنجليزي>\" \"<الدولة بالإنجليزي>\" . "
-                "لو قال الرياض أو ما غيّر، شغّل set-city Riyadh \"Saudi Arabia\"."
+                "[adhan-reminder] The user has not set a city yet. In your first reply (in the user's language), "
+                "ask: which city are you in (default: Riyadh), and should the prayer reminders be in Arabic or English? "
+                "(لم يحدد المستخدم مدينته بعد: اسأله عن مدينته ولغة الرسائل عربي/إنجليزي، الرياض والعربي افتراضيًا). "
+                "Then run: sh \"" + run + "\" set-city \"<city in English>\" \"<country in English>\" "
+                "and: sh \"" + run + "\" set-lang ar|en . "
+                "If they say Riyadh or do not change it: set-city Riyadh \"Saudi Arabia\"."
             )}}
     else:
         msgs = due_messages(cfg, "hook")
@@ -192,10 +225,10 @@ def cmd_hook():
             ensure_watcher(cfg)
             if msgs and event in ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"):
                 result["hookSpecificOutput"] = {"hookEventName": event, "additionalContext":
-                    "[adhan-reminder] ذكّر المستخدم بالصلاة بإيجاز في ردك القادم."}
+                    REMIND_START[lang_of(cfg)]}
         elif msgs and event in ("UserPromptSubmit", "PreToolUse", "PostToolUse"):
             result["hookSpecificOutput"] = {"hookEventName": event, "additionalContext":
-                "[adhan-reminder] وصلت للمستخدم رسالة موعد صلاة. أشر لها بإيجاز في ردك القادم."}
+                REMIND_MID[lang_of(cfg)]}
     if result:
         print(json.dumps(result, ensure_ascii=False))
 
@@ -283,7 +316,7 @@ def cmd_watch():
         if cfg and cfg.get("os_notify", True):
             for m in due_messages(cfg, "os"):
                 lines = [l.strip(" ┃") for l in m.splitlines() if "━" not in l]
-                notify("🕌 مواقيت الصلاة", " — ".join(l.strip() for l in lines if l.strip()))
+                notify("🕌 مواقيت الصلاة" if lang_of(cfg) == "ar" else "🕌 Prayer times", " — ".join(l.strip() for l in lines if l.strip()))
         time.sleep(20)
     try:
         os.remove(PIDFILE)
@@ -312,7 +345,9 @@ def cmd_set_city(args):
     city = args[0]
     country = args[1] if len(args) > 1 else "Saudi Arabia"
     method = int(args[2]) if len(args) > 2 else default_method(country)
-    cfg = {"city": city, "country": country, "method": method, "os_notify": load(CONFIG, {}).get("os_notify", True)}
+    old = load(CONFIG, {})
+    cfg = {"city": city, "country": country, "method": method,
+           "os_notify": old.get("os_notify", True), "lang": lang_of(old)}
     now = datetime.now(timezone.utc)
     try:
         data = month_calendar(cfg, now.year, now.month)
@@ -325,14 +360,27 @@ def cmd_set_city(args):
     cmd_times()
 
 
+def cmd_set_lang(args):
+    if not args or args[0] not in LANGS:
+        sys.exit("usage: set-lang ar|en")
+    cfg = load(CONFIG, {})
+    cfg["lang"] = args[0]
+    save(CONFIG, cfg)
+    print("lang =", cfg["lang"])
+
+
 def cmd_times():
     cfg = load(CONFIG, None)
-    if not cfg:
-        sys.exit("لم تُحدد المدينة بعد. شغّل set-city")
+    if not cfg or not cfg.get("city"):
+        sys.exit("لم تُحدد المدينة بعد. شغّل set-city  /  No city set yet. Run set-city")
     tz, times = today_times(cfg)
-    print("مواقيت الصلاة اليوم — %s, %s" % (cfg["city"], cfg["country"]))
+    en = lang_of(cfg) == "en"
+    print(("Prayer times today — %s, %s" if en else "مواقيت الصلاة اليوم — %s, %s") % (cfg["city"], cfg["country"]))
     for p in PRAYERS:
-        print("  %-8s %s" % (AR[p], times[p].strftime("%I:%M").lstrip("0") + (" ص" if times[p].hour < 12 else " م")))
+        t = times[p]
+        clock = t.strftime("%I:%M").lstrip("0")
+        suffix = (" AM" if t.hour < 12 else " PM") if en else (" ص" if t.hour < 12 else " م")
+        print("  %-8s %s" % (EN[p] if en else AR[p], clock + suffix))
 
 
 def main():
@@ -348,6 +396,8 @@ def main():
         cmd_watch()
     elif cmd == "set-city":
         cmd_set_city(args)
+    elif cmd == "set-lang":
+        cmd_set_lang(args)
     elif cmd == "times":
         cmd_times()
     elif cmd == "status":
