@@ -1,0 +1,5 @@
+{
+  "name": "ahmed-plugins",
+  "owner": {"name": "Ahmed Khalil"},
+  "plugins": [{"name": "adhan-reminder", "source": "./adhan-reminder", "description": "تذكير بمواعيد الصلاة داخل كلود"}]
+}
