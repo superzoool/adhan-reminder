@@ -4,6 +4,10 @@
 
 A Claude Code plugin that reminds you of prayer times while you work.
 
+> 💻 **مخصص للابتوب / الكمبيوتر فقط.** هذا البلقن يعمل داخل **Claude Code** على جهازك، فالتذكير يوصلك داخل كلود وأنت تشتغل ("قم صلِّ"). **لا يعمل على الجوال** ولا على تطبيق Claude للجوال أو الموقع.
+>
+> 💻 **Laptop/desktop only.** This plugin runs inside Claude Code on your computer, so the reminder reaches you right inside Claude while you work. It does not work on mobile or in the Claude mobile app/web.
+
 ## المميزات
 - رسالة مزخرفة داخل كلود وقت الأذان، وأخرى بعد **10 دقائق**: «قم صلِّ».
 - تظهر بين خطوات كلود حتى لو كان يشتغل على مهمة.
@@ -31,6 +35,7 @@ python3 adhan-reminder/scripts/adhan.py stop         # إيقاف العملية
 ```
 
 ## الخصوصية والمتطلبات
+- يحتاج **Claude Code** (يتطلب اشتراك Claude مدفوعاً مثل Pro أو Max، أو حساب API). البلقن نفسه مجاني ومفتوح المصدر.
 - يتصل بـ `api.aladhan.com` فقط، ويرسل اسم المدينة والدولة لجلب المواقيت، ثم يحفظها محلياً.
 - الإعدادات في `~/.claude/adhan/`.
 - العملية الخلفية لإشعارات macOS تعمل حتى 12 ساعة ثم تتوقف.
