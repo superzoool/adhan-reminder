@@ -3,11 +3,11 @@
 
 Usage:
   adhan.py hook            # called by Claude Code hooks (event JSON on stdin)
-  adhan.py watch           # background loop: macOS notification at adhan / +10 min
+  adhan.py watch           # background loop: desktop notification at adhan / +10 min
   adhan.py set-city CITY [COUNTRY] [METHOD]
   adhan.py times           # print today's times
   adhan.py status          # print config state (JSON)
-  adhan.py notify on|off   # toggle macOS notifications
+  adhan.py notify on|off   # toggle desktop notifications (macOS / Windows / Linux)
   adhan.py stop            # stop background watcher
 """
 import json
@@ -17,8 +17,14 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
+
+IS_WIN = sys.platform == "win32"
 
 HOME = os.path.expanduser("~/.claude/adhan")
 CONFIG = os.path.join(HOME, "config.json")
@@ -57,6 +63,17 @@ def save(path, data):
     os.replace(tmp, path)
 
 
+def get_tz(name):
+    """IANA zone by name. Windows has no system tz database (and no tzdata package by
+    default), so fall back to the machine's own timezone instead of crashing."""
+    if (name or "UTC") == "UTC":
+        return timezone.utc
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return datetime.now().astimezone().tzinfo
+
+
 def default_method(country):
     return METHOD_BY_COUNTRY.get((country or "").strip().lower(), 3)
 
@@ -84,12 +101,12 @@ def month_calendar(cfg, year, month):
 
 def today_times(cfg, now_utc=None):
     """Returns (tz, {prayer: aware datetime}) for today in the city's timezone."""
-    now_utc = now_utc or datetime.now(ZoneInfo("UTC"))
-    tz = ZoneInfo(cfg.get("tz") or "UTC")
+    now_utc = now_utc or datetime.now(timezone.utc)
+    tz = get_tz(cfg.get("tz") or "UTC")
     now = now_utc.astimezone(tz)
     data = month_calendar(cfg, now.year, now.month)
     day = data[now.day - 1]
-    tz = ZoneInfo(day["meta"]["timezone"])
+    tz = get_tz(day["meta"]["timezone"])
     now = now_utc.astimezone(tz)
     times = {}
     for p in PRAYERS:
@@ -163,7 +180,7 @@ def cmd_hook():
         if event == "SessionStart":
             result = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
                 "[adhan-reminder] لم يحدد المستخدم مدينته بعد. اسأله في أول رد: «في أي مدينة أنت؟ "
-                "(الرياض افتراضيًا)» ثم شغّل: python3 \"" + os.path.abspath(__file__) + "\" "
+                "(الرياض افتراضيًا)» ثم شغّل: sh \"" + os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.sh") + "\" "
                 "set-city \"<المدينة بالإنجليزي>\" \"<الدولة بالإنجليزي>\" . "
                 "لو قال الرياض أو ما غيّر، شغّل set-city Riyadh \"Saudi Arabia\"."
             )}}
@@ -183,18 +200,59 @@ def cmd_hook():
         print(json.dumps(result, ensure_ascii=False))
 
 
-# ---------- watcher (macOS notifications while Claude is busy) ----------
+# ---------- watcher (desktop notifications while Claude is busy) ----------
+
+def _which(name):
+    from shutil import which
+    return which(name)
+
 
 def notify(title, text):
-    esc = lambda s: s.replace("\\", "\\\\").replace('"', '\\"')
-    script = 'display notification "%s" with title "%s" sound name "Glass"' % (esc(text), esc(title))
     try:
-        subprocess.run(["osascript", "-e", script], timeout=10, check=False)
+        if sys.platform == "darwin":
+            esc = lambda t: t.replace("\\", "\\\\").replace('"', '\\"')
+            script = 'display notification "%s" with title "%s" sound name "Glass"' % (esc(text), esc(title))
+            subprocess.run(["osascript", "-e", script], timeout=10, check=False)
+        elif IS_WIN:
+            ps = (
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null;"
+                "$x=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
+                "$t=$x.GetElementsByTagName('text');"
+                "$t.Item(0).AppendChild($x.CreateTextNode($env:ADHAN_TITLE)) | Out-Null;"
+                "$t.Item(1).AppendChild($x.CreateTextNode($env:ADHAN_TEXT)) | Out-Null;"
+                "$app='{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe';"
+                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show([Windows.UI.Notifications.ToastNotification]::new($x))"
+            )
+            env = dict(os.environ, ADHAN_TITLE=title, ADHAN_TEXT=text)
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           env=env, timeout=15, check=False, creationflags=0x08000000,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif _which("notify-send"):
+            subprocess.run(["notify-send", "-a", "adhan-reminder", "-u", "critical", title, text],
+                           timeout=10, check=False)
     except Exception:
         pass
 
 
+def notify_supported():
+    return sys.platform == "darwin" or IS_WIN or bool(_which("notify-send"))
+
+
 def pid_alive(pid):
+    if IS_WIN:
+        # os.kill(pid, 0) would TERMINATE the process on Windows, so ask the OS instead.
+        try:
+            import ctypes
+            k32 = ctypes.windll.kernel32
+            h = k32.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return False
+            code = ctypes.c_ulong()
+            ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+            k32.CloseHandle(h)
+            return bool(ok) and code.value == 259  # STILL_ACTIVE
+        except Exception:
+            return False
     try:
         os.kill(pid, 0)
         return True
@@ -203,14 +261,18 @@ def pid_alive(pid):
 
 
 def ensure_watcher(cfg):
-    if not cfg.get("os_notify", True) or sys.platform != "darwin":
+    if not cfg.get("os_notify", True) or not notify_supported():
         return
     pid = load(PIDFILE, {}).get("pid")
     if pid and pid_alive(pid):
         return
-    subprocess.Popen([sys.executable, os.path.abspath(__file__), "watch"],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+    kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if IS_WIN:
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+        kwargs["creationflags"] = 0x00000008 | 0x00000200 | 0x08000000
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen([sys.executable, os.path.abspath(__file__), "watch"], **kwargs)
 
 
 def cmd_watch():
@@ -232,7 +294,11 @@ def cmd_watch():
 def cmd_stop():
     pid = load(PIDFILE, {}).get("pid")
     if pid and pid_alive(pid):
-        os.kill(pid, 15)
+        if IS_WIN:
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            os.kill(pid, 15)
         print("stopped watcher", pid)
     else:
         print("no watcher running")
@@ -247,7 +313,7 @@ def cmd_set_city(args):
     country = args[1] if len(args) > 1 else "Saudi Arabia"
     method = int(args[2]) if len(args) > 2 else default_method(country)
     cfg = {"city": city, "country": country, "method": method, "os_notify": load(CONFIG, {}).get("os_notify", True)}
-    now = datetime.now(ZoneInfo("UTC"))
+    now = datetime.now(timezone.utc)
     try:
         data = month_calendar(cfg, now.year, now.month)
     except Exception as e:
@@ -270,6 +336,11 @@ def cmd_times():
 
 
 def main():
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     cmd, args = (sys.argv[1] if len(sys.argv) > 1 else "times"), sys.argv[2:]
     if cmd == "hook":
         cmd_hook()

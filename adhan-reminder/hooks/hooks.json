@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/adhan.py\" hook",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook",
             "timeout": 30
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/adhan.py\" hook",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook",
             "timeout": 30
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/adhan.py\" hook",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook",
             "timeout": 30
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/adhan.py\" hook",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook",
             "timeout": 30
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/adhan.py\" hook",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh\" hook",
             "timeout": 30
           }
         ]
