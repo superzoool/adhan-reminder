@@ -10,6 +10,8 @@ Usage:
   adhan.py status          # print config state (JSON)
   adhan.py notify on|off   # toggle desktop notifications (macOS / Windows / Linux)
   adhan.py stop            # stop background watcher
+  adhan.py test            # fire a test alert now
+  adhan.py dialog on|off   # macOS pop-up window fallback (default on)
 """
 import json
 import os
@@ -75,6 +77,18 @@ def get_tz(name):
         return ZoneInfo(name)
     except Exception:
         return datetime.now().astimezone().tzinfo
+
+
+def log(msg):
+    try:
+        os.makedirs(HOME, exist_ok=True)
+        path = os.path.join(HOME, "watcher.log")
+        if os.path.exists(path) and os.path.getsize(path) > 200000:
+            os.remove(path)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("%s %s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
+    except Exception:
+        pass
 
 
 def lang_of(cfg):
@@ -278,8 +292,8 @@ def cmd_hook():
         msgs = due_messages(cfg, "hook")
         if msgs:
             result["systemMessage"] = "\n\n".join(msgs)
+        ensure_watcher(cfg)
         if event == "SessionStart":
-            ensure_watcher(cfg)
             if msgs and event in ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"):
                 result["hookSpecificOutput"] = {"hookEventName": event, "additionalContext":
                     REMIND_START[lang_of(cfg)]}
@@ -303,6 +317,15 @@ def notify(title, text):
             esc = lambda t: t.replace("\\", "\\\\").replace('"', '\\"')
             script = 'display notification "%s" with title "%s" sound name "Glass"' % (esc(text), esc(title))
             subprocess.run(["osascript", "-e", script], timeout=10, check=False)
+            # Fallbacks that work even if notifications are blocked (permission / Focus mode):
+            # a sound, and a dialog window that closes itself after 90 seconds.
+            sound = "/System/Library/Sounds/Glass.aiff"
+            if os.path.exists(sound):
+                subprocess.Popen(["afplay", sound], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if load(CONFIG, {}).get("dialog", True):
+                dlg = ('display dialog "%s" with title "%s" buttons {"OK"} default button "OK" '
+                       'giving up after 90') % (esc(text), esc(title))
+                subprocess.Popen(["osascript", "-e", dlg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif IS_WIN:
             ps = (
                 "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null;"
@@ -367,12 +390,14 @@ def ensure_watcher(cfg):
 
 def cmd_watch():
     save(PIDFILE, {"pid": os.getpid()})
+    log("watcher started pid=%d" % os.getpid())
     end = time.time() + WATCH_MAX_HOURS * 3600
     while time.time() < end:
         cfg = load(CONFIG, None)
         if cfg and cfg.get("os_notify", True):
             for m in due_messages(cfg, "os"):
                 lines = [l.strip(" ┃") for l in m.splitlines() if "━" not in l]
+                log("notify: " + " | ".join(l.strip() for l in lines if l.strip()))
                 notify("🕌 مواقيت الصلاة" if lang_of(cfg) == "ar" else "🕌 Prayer times", " — ".join(l.strip() for l in lines if l.strip()))
         time.sleep(20)
     try:
@@ -404,7 +429,8 @@ def cmd_set_city(args):
     method = int(args[2]) if len(args) > 2 else default_method(country)
     old = load(CONFIG, {})
     cfg = {"city": city, "country": country, "method": method,
-           "os_notify": old.get("os_notify", True), "lang": lang_of(old)}
+           "os_notify": old.get("os_notify", True), "lang": lang_of(old),
+           "dialog": old.get("dialog", True)}
     now = datetime.now(timezone.utc)
     try:
         data = month_calendar(cfg, now.year, now.month)
@@ -466,6 +492,14 @@ def main():
         print("os_notify =", cfg["os_notify"])
     elif cmd == "stop":
         cmd_stop()
+    elif cmd == "test":
+        notify("🕌 تجربة", "هذا اختبار تنبيه الأذان")
+        print("sent test alert")
+    elif cmd == "dialog":
+        cfg = load(CONFIG, {})
+        cfg["dialog"] = bool(args) and args[0] == "on"
+        save(CONFIG, cfg)
+        print("dialog =", cfg["dialog"])
     else:
         sys.exit(__doc__)
 
