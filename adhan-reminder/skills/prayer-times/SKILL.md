@@ -14,4 +14,6 @@ Reply to the user in the language they are writing in.
 - **Reminder language / لغة التذكير**: `... set-lang ar` (Arabic, default) or `... set-lang en` (English). The setting is kept when the city changes.
 - **Desktop notifications (macOS / Windows / Linux)**, which work even while Claude is busy with a long command: `... notify on` or `... notify off`. Stop the background process with `... stop`.
 
+- **Always-on notifications (macOS only) / تشغيل دائم**: the watcher normally runs only while a Claude Code session has been active. `... service on` installs a small launchd agent (`~/Library/LaunchAgents/com.adhan-reminder.watcher.plist`) so it starts at login and restarts if it stops; `... service off` removes it; `... service status` shows the state. Run `service on` only after the user agrees.
+
 After any change, show the user the times in a tidy list.

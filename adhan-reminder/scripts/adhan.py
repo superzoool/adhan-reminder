@@ -12,6 +12,7 @@ Usage:
   adhan.py stop            # stop background watcher
   adhan.py test            # fire a test alert now
   adhan.py dialog on|off   # macOS pop-up window fallback (default on)
+  adhan.py service on|off|status  # macOS: keep the watcher alive at login via launchd (opt-in)
 """
 import json
 import os
@@ -33,6 +34,9 @@ HOME = os.path.expanduser("~/.claude/adhan")
 CONFIG = os.path.join(HOME, "config.json")
 STATE = os.path.join(HOME, "state.json")
 PIDFILE = os.path.join(HOME, "watcher.pid")
+SERVICE_LABEL = "com.adhan-reminder.watcher"
+SERVICE_PLIST = os.path.expanduser("~/Library/LaunchAgents/%s.plist" % SERVICE_LABEL)
+SERVICE_SCRIPT = os.path.join(HOME, "adhan.py")  # stable copy: the plugin cache path changes on every update
 
 PRAYERS = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]
 AR = {"Fajr": "الفجر", "Dhuhr": "الظهر", "Asr": "العصر", "Maghrib": "المغرب", "Isha": "العشاء"}
@@ -294,9 +298,22 @@ def cmd_hook():
             result["systemMessage"] = "\n\n".join(msgs)
         ensure_watcher(cfg)
         if event == "SessionStart":
-            if msgs and event in ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"):
-                result["hookSpecificOutput"] = {"hookEventName": event, "additionalContext":
-                    REMIND_START[lang_of(cfg)]}
+            ctx = []
+            if msgs:
+                ctx.append(REMIND_START[lang_of(cfg)])
+            if sys.platform == "darwin" and cfg.get("os_notify", True) \
+                    and not service_installed() and not cfg.get("service_offered"):
+                cfg["service_offered"] = True
+                save(CONFIG, cfg)
+                run = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.sh")
+                ctx.append(
+                    "[adhan-reminder] Desktop notifications only work while a Claude Code session is open. "
+                    "Once, in your first reply (in the user's language), offer to keep them running in the "
+                    "background at every login (installs a small launchd agent in ~/Library/LaunchAgents; "
+                    "removable any time with `service off`). Only if they agree, run: sh \"" + run + "\" service on . "
+                    "(يعمل إشعار الصلاة المستقل فقط أثناء فتح جلسة كلود؛ اعرض عليه مرة واحدة تشغيله تلقائيًا عند كل تسجيل دخول.)")
+            if ctx:
+                result["hookSpecificOutput"] = {"hookEventName": event, "additionalContext": " ".join(ctx)}
         elif msgs and event in ("UserPromptSubmit", "PreToolUse", "PostToolUse"):
             result["hookSpecificOutput"] = {"hookEventName": event, "additionalContext":
                 REMIND_MID[lang_of(cfg)]}
@@ -376,6 +393,9 @@ def pid_alive(pid):
 def ensure_watcher(cfg):
     if not cfg.get("os_notify", True) or not notify_supported():
         return
+    if service_installed():
+        refresh_service_script()
+        return
     pid = load(PIDFILE, {}).get("pid")
     if pid and pid_alive(pid):
         return
@@ -406,6 +426,66 @@ def cmd_watch():
         pass
 
 
+def service_installed():
+    return sys.platform == "darwin" and os.path.exists(SERVICE_PLIST)
+
+
+def refresh_service_script():
+    """Keep the stable copy in sync with the installed plugin version (picked up on the next watcher restart)."""
+    try:
+        src = os.path.abspath(__file__)
+        if os.path.abspath(SERVICE_SCRIPT) != src:
+            with open(src, "rb") as f:
+                data = f.read()
+            with open(SERVICE_SCRIPT, "rb") as f:
+                same = f.read() == data
+            if not same:
+                raise OSError
+    except OSError:
+        import shutil
+        shutil.copyfile(os.path.abspath(__file__), SERVICE_SCRIPT)
+
+
+def cmd_service(args):
+    if sys.platform != "darwin":
+        sys.exit("service is only available on macOS")
+    action = args[0] if args else "status"
+    domain = "gui/%d" % os.getuid()
+    if action == "on":
+        import plistlib
+        import shutil
+        os.makedirs(HOME, exist_ok=True)
+        os.makedirs(os.path.dirname(SERVICE_PLIST), exist_ok=True)
+        shutil.copyfile(os.path.abspath(__file__), SERVICE_SCRIPT)
+        with open(SERVICE_PLIST, "wb") as f:
+            plistlib.dump({
+                "Label": SERVICE_LABEL,
+                "ProgramArguments": [sys.executable, SERVICE_SCRIPT, "watch"],
+                "RunAtLoad": True,
+                "KeepAlive": True,
+                "ThrottleInterval": 30,
+            }, f)
+        cmd_stop()
+        subprocess.run(["launchctl", "bootout", domain, SERVICE_PLIST], capture_output=True)
+        r = subprocess.run(["launchctl", "bootstrap", domain, SERVICE_PLIST], capture_output=True, text=True)
+        if r.returncode != 0:
+            sys.exit("launchctl failed: " + r.stderr.strip())
+        print("service on: the watcher now starts at login and restarts if it stops (%s)" % SERVICE_PLIST)
+    elif action == "off":
+        subprocess.run(["launchctl", "bootout", domain, SERVICE_PLIST], capture_output=True)
+        for path in (SERVICE_PLIST, SERVICE_SCRIPT):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        print("service off: launchd agent removed")
+    elif action == "status":
+        r = subprocess.run(["launchctl", "list", SERVICE_LABEL], capture_output=True, text=True)
+        print("service installed:", service_installed(), "| running:", r.returncode == 0)
+    else:
+        sys.exit("usage: service on|off|status")
+
+
 def cmd_stop():
     pid = load(PIDFILE, {}).get("pid")
     if pid and pid_alive(pid):
@@ -430,7 +510,7 @@ def cmd_set_city(args):
     old = load(CONFIG, {})
     cfg = {"city": city, "country": country, "method": method,
            "os_notify": old.get("os_notify", True), "lang": lang_of(old),
-           "dialog": old.get("dialog", True)}
+           "dialog": old.get("dialog", True), "service_offered": old.get("service_offered", False)}
     now = datetime.now(timezone.utc)
     try:
         data = month_calendar(cfg, now.year, now.month)
@@ -495,6 +575,8 @@ def main():
     elif cmd == "test":
         notify("🕌 تجربة", "هذا اختبار تنبيه الأذان")
         print("sent test alert")
+    elif cmd == "service":
+        cmd_service(args)
     elif cmd == "dialog":
         cfg = load(CONFIG, {})
         cfg["dialog"] = bool(args) and args[0] == "on"

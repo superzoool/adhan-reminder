@@ -39,14 +39,18 @@ sh adhan-reminder/scripts/run.sh set-lang en        # or: ar
 sh adhan-reminder/scripts/run.sh times
 sh adhan-reminder/scripts/run.sh notify off         # turn off desktop notifications
 sh adhan-reminder/scripts/run.sh stop               # stop the background process
+sh adhan-reminder/scripts/run.sh service on         # macOS: keep notifications running at every login
 ```
+
+### Always-on notifications (macOS, optional)
+By default the background process starts with a Claude Code session and stops after 12 hours, so you can miss a reminder when no session was open. On macOS, `service on` installs a small launchd agent that starts at login and restarts if it stops; it uses almost no CPU or memory. Claude offers it once on your first session. Remove it any time with `service off`; `service status` shows its state.
 
 ### Requirements and privacy
 - **Claude Code**, which needs a paid Claude plan (Pro or Max) or an API account. The plugin itself is free and open source.
 - **Python 3.9+**, no extra packages. The plugin looks for `python3`, then `python`, then `py`.
 - It only contacts `api.aladhan.com`, sending the city and country name to fetch times, then caches them locally.
 - Settings are stored in `~/.claude/adhan/`.
-- The notification process runs for up to 12 hours, then stops (it restarts with each new session).
+- Without the optional service, the notification process runs for up to 12 hours, then stops (it restarts with each new session).
 
 ### Supported systems
 | System | Message inside Claude | Desktop notification |
@@ -91,14 +95,18 @@ sh adhan-reminder/scripts/run.sh set-lang ar        # أو: en
 sh adhan-reminder/scripts/run.sh times
 sh adhan-reminder/scripts/run.sh notify off         # إيقاف إشعارات سطح المكتب
 sh adhan-reminder/scripts/run.sh stop               # إيقاف العملية الخلفية
+sh adhan-reminder/scripts/run.sh service on         # macOS: تشغيل الإشعارات تلقائياً عند كل تسجيل دخول
 ```
+
+### إشعارات دائمة (macOS، اختياري)
+افتراضياً تبدأ العملية الخلفية مع جلسة Claude Code وتتوقف بعد 12 ساعة، فقد يفوتك تذكير إذا لم تكن هناك جلسة مفتوحة. على macOS الأمر `service on` يثبّت خدمة launchd صغيرة تبدأ عند تسجيل الدخول وتعيد تشغيل نفسها إذا توقفت، واستهلاكها للمعالج والذاكرة شبه معدوم. يعرضها عليك كلود مرة واحدة في أول جلسة. تلغيها بـ `service off`، و`service status` يعرض حالتها.
 
 ### الخصوصية والمتطلبات
 - يحتاج **Claude Code** (يتطلب اشتراك Claude مدفوعاً مثل Pro أو Max، أو حساب API). البلقن نفسه مجاني ومفتوح المصدر.
 - يحتاج **Python 3.9+** (بدون مكتبات إضافية). البلقن يبحث تلقائياً عن `python3` ثم `python` ثم `py`.
 - يتصل بـ `api.aladhan.com` فقط، ويرسل اسم المدينة والدولة لجلب المواقيت، ثم يحفظها محلياً.
 - الإعدادات في `~/.claude/adhan/`.
-- العملية الخلفية للإشعارات تعمل حتى 12 ساعة ثم تتوقف (تتجدد مع كل جلسة جديدة).
+- بدون الخدمة الاختيارية، العملية الخلفية للإشعارات تعمل حتى 12 ساعة ثم تتوقف (تتجدد مع كل جلسة جديدة).
 
 ### الأنظمة المدعومة
 | النظام | رسالة داخل كلود | إشعار سطح المكتب |
