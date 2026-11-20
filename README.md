@@ -1,5 +1,7 @@
 # 🕌 adhan-reminder — تذكير الصلاة لـ Claude Code
 
+<p align="center"><img src="assets/adhan-reminder-logo-512.png" alt="adhan-reminder logo" width="160"></p>
+
 **[English](#english) · [العربية](#العربية)**
 
 > 💻 **Laptop/desktop only · مخصص للابتوب والكمبيوتر فقط.**
